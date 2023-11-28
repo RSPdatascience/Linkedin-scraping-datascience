@@ -1,6 +1,4 @@
-<div style="text-align:center;">
-  <strong><h1 style="font-size:2em;">Linkedin scraping and datascience</h1></strong>  
-</div>
+# Linkedin scraping and datascience
 
 ![Histogram](histogram.PNG)
 
