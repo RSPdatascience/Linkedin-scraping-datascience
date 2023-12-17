@@ -14,7 +14,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import sqlite3 
 
+# Function to read job offer content
 def click_and_read_job_offer(driver, job_title_element):
     job_title_element_href = job_title_element['href']
     job_url = f"https://www.linkedin.com{job_title_element_href}"
@@ -36,8 +40,8 @@ def click_and_read_job_offer(driver, job_title_element):
         job_description_element = job_offer_soup.find("div", class_="jobs-description-content__text")
 
         if job_description_element:
-            job_description = job_description_element.text.strip()[19:].replace('\n', ' ')
-            job_description = job_description[14:]
+            job_description = job_description_element.text.strip()[19:]
+            job_description = job_description[14:].replace('\n', ' ')
             print("Job Description:", job_description)
             return job_description
 
@@ -52,6 +56,13 @@ def click_and_read_job_offer(driver, job_title_element):
         driver.switch_to.window(driver.window_handles[0])
 
     return None
+
+# Function to calculate cosine similarity
+def calculate_cosine_similarity(description1, description2):
+    vectorizer = TfidfVectorizer()
+    tfidf_matrix = vectorizer.fit_transform([description1, description2])
+    similarity_matrix = cosine_similarity(tfidf_matrix)
+    return similarity_matrix[0, 1]
 
 remote_debugging_port = 9222  # Update with the correct port number
 
@@ -77,14 +88,26 @@ new_data = set()  # Store new data to be written to the file
 
 # Keywords to filter job titles
 keywords = ['data analyst', "analista de datos", "business intelligence", 'PowerBI', 'Power BI', 'BI']
+
 filename='job_offers_data_analytics.txt'
 
 # Setup an SQLite DB
-import sqlite3  # Use the appropriate library for your chosen database
-connection = sqlite3.connect(filename[:-4]+'.db') 
+connection = sqlite3.connect(filename[:-8]+'.db') 
 cursor = connection.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS job_offers (ID INTEGER PRIMARY KEY AUTOINCREMENT, Title CHAR, Company CHAR, Location CHAR, Description VARCHAR)")
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS job_offers (
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    DateAdded DATE DEFAULT CURRENT_DATE,
+    Title CHAR,
+    Company CHAR,
+    Location CHAR,
+    Description VARCHAR
+);               
+               ''')
 
+# Extract company names and offers to check if they are already in the database
+cursor.execute("SELECT Company, Description FROM job_offers")
+existing_data = cursor.fetchall()
 
 for job_card_element in job_card_elements:
     job_title_element = job_card_element.find("a", class_="job-card-container__link")
@@ -104,13 +127,36 @@ for job_card_element in job_card_elements:
                 print('Location: ', location)
 
                 job_description = click_and_read_job_offer(driver, job_title_element)
-                
-                if job_description:
-                    new_data.add((job_title, company_name, location, job_description))
-                    with open(filename, 'a', encoding='utf-8') as file:
-                        file.write(f"{job_title}\t{company_name}\t{location}\t{job_description}\n")                 
-                        cursor.execute("INSERT INTO job_offers (Title, Company, Location, Description) VALUES (?, ?, ?, ?)",(job_title, company_name, location, job_description))
 
+                if job_description:
+                    # Check if the company name is already in the database
+                    existing_company_descriptions = [
+                        (comp, desc) for comp, desc in existing_data if comp.lower() == company_name.lower()
+                    ]
+
+                    new_record = (job_title, company_name, location, job_description)
+                    insertion_message = None
+
+                    if existing_company_descriptions:
+                        # Check similarity with existing job descriptions for the same company
+                        for existing_company, existing_description in existing_company_descriptions:
+                            similarity = calculate_cosine_similarity(existing_description, job_description)
+                            if similarity >= 0.9:
+                                insertion_message = "Similar job description found. Skipping insertion."
+                                break
+                        else:
+                            insertion_message = "No similar job description found. Inserting new record."
+                    else:
+                        insertion_message = "Company not found in the database. Inserting new record."
+
+                    if insertion_message and not any(record == new_record for record in new_data):
+                        new_data.add(new_record)
+                        with open(filename, 'a', encoding='utf-8') as file:
+                            file.write(f"{job_title}\t{company_name}\t{location}\t{job_description}\n")                 
+                            cursor.execute("INSERT INTO job_offers (Title, Company, Location, Description) VALUES (?, ?, ?, ?)",(job_title, company_name, location, job_description))
+                            print(insertion_message)
+                else:
+                    print("No job description found.")
                 print()
 
 # Close the web driver when finished
