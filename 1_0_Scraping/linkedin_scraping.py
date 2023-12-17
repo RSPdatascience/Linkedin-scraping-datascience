@@ -1,4 +1,3 @@
-# This is a development file
 # This is Linkedin job offer scraper
 # This code saves only job offers that contain specified keywords
 # For the code to work, open the Chrome browser from CMD with this command:
@@ -37,8 +36,8 @@ def click_and_read_job_offer(driver, job_title_element):
         job_description_element = job_offer_soup.find("div", class_="jobs-description-content__text")
 
         if job_description_element:
-            job_description = job_description_element.text.strip()[19:]
-            job_description = job_description.replace('\n', ' ')
+            job_description = job_description_element.text.strip()[19:].replace('\n', ' ')
+            job_description = job_description[14:]
             print("Job Description:", job_description)
             return job_description
 
@@ -78,6 +77,14 @@ new_data = set()  # Store new data to be written to the file
 
 # Keywords to filter job titles
 keywords = ['data analyst', "analista de datos", "business intelligence", 'PowerBI', 'Power BI', 'BI']
+filename='job_offers_data_analytics.txt'
+
+# Setup an SQLite DB
+import sqlite3  # Use the appropriate library for your chosen database
+connection = sqlite3.connect(filename[:-4]+'.db') 
+cursor = connection.cursor()
+cursor.execute("CREATE TABLE IF NOT EXISTS job_offers (ID INTEGER PRIMARY KEY AUTOINCREMENT, Title CHAR, Company CHAR, Location CHAR, Description VARCHAR)")
+
 
 for job_card_element in job_card_elements:
     job_title_element = job_card_element.find("a", class_="job-card-container__link")
@@ -97,13 +104,18 @@ for job_card_element in job_card_elements:
                 print('Location: ', location)
 
                 job_description = click_and_read_job_offer(driver, job_title_element)
-
+                
                 if job_description:
                     new_data.add((job_title, company_name, location, job_description))
-                    with open('job_offers_data_analytics.txt', 'a', encoding='utf-8') as file:
-                        file.write(f"{job_title}\t{company_name}\t{location}\t{job_description}\n")
+                    with open(filename, 'a', encoding='utf-8') as file:
+                        file.write(f"{job_title}\t{company_name}\t{location}\t{job_description}\n")                 
+                        cursor.execute("INSERT INTO job_offers (Title, Company, Location, Description) VALUES (?, ?, ?, ?)",(job_title, company_name, location, job_description))
 
                 print()
 
 # Close the web driver when finished
 driver.quit()
+
+# Commit and close the SQLite connection
+connection.commit()
+connection.close()
