@@ -89,10 +89,10 @@ new_data = set()  # Store new data to be written to the file
 # Keywords to filter job titles
 keywords = ['data analyst', "analista de datos", "business intelligence", 'PowerBI', 'Power BI', 'BI']
 
-filename='job_offers_data_analytics.txt'
+filename='job_offers_data_analyst.txt'
 
 # Setup an SQLite DB
-connection = sqlite3.connect(filename[:-8]+'.db') 
+connection = sqlite3.connect(filename[:-4]+'.db') 
 cursor = connection.cursor()
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS job_offers (
@@ -129,35 +129,31 @@ for job_card_element in job_card_elements:
                 job_description = click_and_read_job_offer(driver, job_title_element)
 
                 if job_description:
-                    # Check if the company name is already in the database
-                    existing_company_descriptions = [
-                        (comp, desc) for comp, desc in existing_data if comp.lower() == company_name.lower()
-                    ]
-
                     new_record = (job_title, company_name, location, job_description)
-                    insertion_message = None
+                    insertion_message = "\n No similar job description found. Inserting new record."
 
-                    if existing_company_descriptions:
-                        # Check similarity with existing job descriptions for the same company
-                        for existing_company, existing_description in existing_company_descriptions:
+                    # Check similarity with existing job descriptions
+                    if existing_data:
+                        for existing_company, existing_description in existing_data:
                             similarity = calculate_cosine_similarity(existing_description, job_description)
                             if similarity >= 0.9:
-                                insertion_message = "Similar job description found. Skipping insertion."
+                                insertion_message = "\n Similar job description found. Skipping insertion."
                                 break
-                        else:
-                            insertion_message = "No similar job description found. Inserting new record."
-                    else:
-                        insertion_message = "Company not found in the database. Inserting new record."
 
-                    if insertion_message and not any(record == new_record for record in new_data):
+                    if insertion_message and new_record not in new_data:
                         new_data.add(new_record)
                         with open(filename, 'a', encoding='utf-8') as file:
-                            file.write(f"{job_title}\t{company_name}\t{location}\t{job_description}\n")                 
-                            cursor.execute("INSERT INTO job_offers (Title, Company, Location, Description) VALUES (?, ?, ?, ?)",(job_title, company_name, location, job_description))
+                            file.write(f"{job_title}\t{company_name}\t{location}\t{job_description}\n")
+                            cursor.execute("INSERT INTO job_offers (Title, Company, Location, Description) VALUES (?, ?, ?, ?)", (job_title, company_name, location, job_description))
                             print(insertion_message)
+                    else:
+                        print(insertion_message)
                 else:
                     print("No job description found.")
                 print()
+
+
+
 
 # Close the web driver when finished
 driver.quit()
